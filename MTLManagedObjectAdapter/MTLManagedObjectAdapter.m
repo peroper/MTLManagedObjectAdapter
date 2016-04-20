@@ -75,7 +75,7 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 //
 // Returns a dictionary with the properties of modelClass that need
 // transformation as keys and the value transformers as values.
-- (NSDictionary *)valueTransformersForModelClass:(Class)class;
+- (NSDictionary *)valueTransformersForModelClass:(Class)aClass;
 
 // Initializes the receiver to serialize or deserialize a MTLModel of the given
 // class.
@@ -761,10 +761,10 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 	return result;
 }
 
-+ (NSValueTransformer *)transformerForModelPropertiesOfClass:(Class)class {
-	NSParameterAssert(class != nil);
++ (NSValueTransformer *)transformerForModelPropertiesOfClass:(Class)aClass {
+	NSParameterAssert(aClass != nil);
 
-	SEL selector = MTLSelectorWithKeyPattern(NSStringFromClass(class), "EntityAttributeTransformer");
+	SEL selector = MTLSelectorWithKeyPattern(NSStringFromClass(aClass), "EntityAttributeTransformer");
 	if (![self respondsToSelector:selector]) return nil;
 
 	NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:[self methodSignatureForSelector:selector]];

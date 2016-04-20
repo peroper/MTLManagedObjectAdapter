@@ -231,7 +231,7 @@ extern const NSInteger MTLManagedObjectAdapterErrorInvalidManagedObjectMapping;
 //         nil.
 //
 // Returns a value transformer or nil if no transformation should be used.
-+ (NSValueTransformer *)transformerForModelPropertiesOfClass:(Class)class;
++ (NSValueTransformer *)transformerForModelPropertiesOfClass:(Class)aClass;
 
 // A value transformer that should be used for a properties of the given
 // primitive type.
