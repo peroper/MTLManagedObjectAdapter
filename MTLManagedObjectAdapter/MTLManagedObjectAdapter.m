@@ -166,12 +166,14 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 	// any cycles when processing its relationships.
 	CFDictionaryAddValue(processedObjects, (__bridge void *)managedObject, (__bridge void *)model);
 
+    __block NSError *tmpError;
+
 	BOOL (^setValueForKey)(NSString *, id) = ^(NSString *key, id value) {
 		// Mark this as being autoreleased, because validateValue may return
 		// a new object to be stored in this variable (and we don't want ARC to
 		// double-free or leak the old or new values).
 		__autoreleasing id replaceableValue = value;
-		if (![model validateValue:&replaceableValue forKey:key error:error]) return NO;
+		if (![model validateValue:&replaceableValue forKey:key error:&tmpError]) return NO;
 
 		[model setValue:replaceableValue forKey:key];
 		return YES;
@@ -191,7 +193,7 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 				id<MTLTransformerErrorHandling> errorHandlingTransformer = (id)transformer;
 
 				BOOL success = YES;
-				value = [errorHandlingTransformer transformedValue:value success:&success error:error];
+				value = [errorHandlingTransformer transformedValue:value success:&success error:&tmpError];
 
 				if (!success) return NO;
 			} else if (transformer != nil) {
@@ -213,7 +215,7 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 					NSMutableArray *models = [NSMutableArray arrayWithCapacity:[relationshipCollection count]];
 
 					for (NSManagedObject *nestedObject in relationshipCollection) {
-						id<MTLManagedObjectSerializing> model = [self.class modelOfClass:nestedClass fromManagedObject:nestedObject processedObjects:processedObjects error:error];
+						id<MTLManagedObjectSerializing> model = [self.class modelOfClass:nestedClass fromManagedObject:nestedObject processedObjects:processedObjects error:&tmpError];
 						if (model == nil) return nil;
 
 						[models addObject:model];
@@ -233,7 +235,7 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 
 				if (nestedObject == nil) return YES;
 
-				id<MTLManagedObjectSerializing> model = [self.class modelOfClass:nestedClass fromManagedObject:nestedObject processedObjects:processedObjects error:error];
+				id<MTLManagedObjectSerializing> model = [self.class modelOfClass:nestedClass fromManagedObject:nestedObject processedObjects:processedObjects error:&tmpError];
 				if (model == nil) return NO;
 
 				return setValueForKey(propertyKey, model);
@@ -242,17 +244,14 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 
 		BOOL (^deserializeProperty)(NSPropertyDescription *) = ^(NSPropertyDescription *propertyDescription) {
 			if (propertyDescription == nil) {
-				if (error != NULL) {
-					NSString *failureReason = [NSString stringWithFormat:NSLocalizedString(@"No property by name \"%@\" exists on the entity.", @""), managedObjectKey];
+				NSString *failureReason = [NSString stringWithFormat:NSLocalizedString(@"No property by name \"%@\" exists on the entity.", @""), managedObjectKey];
 
-					NSDictionary *userInfo = @{
-											   NSLocalizedDescriptionKey: NSLocalizedString(@"Could not deserialize managed object", @""),
-											   NSLocalizedFailureReasonErrorKey: failureReason,
-											   };
+				NSDictionary *userInfo = @{
+										   NSLocalizedDescriptionKey: NSLocalizedString(@"Could not deserialize managed object", @""),
+										   NSLocalizedFailureReasonErrorKey: failureReason,
+										   };
 
-					*error = [NSError errorWithDomain:MTLManagedObjectAdapterErrorDomain code:MTLManagedObjectAdapterErrorInvalidManagedObjectKey userInfo:userInfo];
-				}
-
+				tmpError = [NSError errorWithDomain:MTLManagedObjectAdapterErrorDomain code:MTLManagedObjectAdapterErrorInvalidManagedObjectKey userInfo:userInfo];
 				return NO;
 			}
 
@@ -263,22 +262,24 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 			} else if ([propertyClassName isEqual:@"NSRelationshipDescription"]) {
 				return deserializeRelationship((id)propertyDescription);
 			} else {
-				if (error != NULL) {
-					NSString *failureReason = [NSString stringWithFormat:NSLocalizedString(@"Property descriptions of class %@ are unsupported.", @""), propertyClassName];
+				NSString *failureReason = [NSString stringWithFormat:NSLocalizedString(@"Property descriptions of class %@ are unsupported.", @""), propertyClassName];
 
-					NSDictionary *userInfo = @{
-											   NSLocalizedDescriptionKey: NSLocalizedString(@"Could not deserialize managed object", @""),
-											   NSLocalizedFailureReasonErrorKey: failureReason,
-											   };
+				NSDictionary *userInfo = @{
+										   NSLocalizedDescriptionKey: NSLocalizedString(@"Could not deserialize managed object", @""),
+										   NSLocalizedFailureReasonErrorKey: failureReason,
+										   };
 
-					*error = [NSError errorWithDomain:MTLManagedObjectAdapterErrorDomain code:MTLManagedObjectAdapterErrorUnsupportedManagedObjectPropertyType userInfo:userInfo];
-				}
-
+				tmpError = [NSError errorWithDomain:MTLManagedObjectAdapterErrorDomain code:MTLManagedObjectAdapterErrorUnsupportedManagedObjectPropertyType userInfo:userInfo];
 				return NO;
 			}
 		};
 
-		if (!deserializeProperty(managedObjectProperties[managedObjectKey])) return nil;
+        if (!deserializeProperty(managedObjectProperties[managedObjectKey])) {
+            if (tmpError && error) {
+                *error = tmpError;
+            }
+            return nil;
+        }
 	}
 
 	return model;
@@ -452,7 +453,7 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 					id<MTLTransformerErrorHandling> errorHandlingTransformer = (id)transformer;
 
 					BOOL success = YES;
-					transformedValue = [errorHandlingTransformer reverseTransformedValue:value success:&success error:error];
+					transformedValue = [errorHandlingTransformer reverseTransformedValue:value success:&success error:&tmpError];
 
 					if (!success) return NO;
 				} else {
