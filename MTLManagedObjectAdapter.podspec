@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
     s.name = "MTLManagedObjectAdapter"
-    s.version = "1.0.5"
+    s.version = "1.0.6"
     s.license = "MIT"
     s.summary = "Model framework for Cocoa and Cocoa Touch."
     s.homepage = "https://github.com/Mantle/Mantle"

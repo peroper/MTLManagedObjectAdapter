@@ -191,6 +191,8 @@ extern const NSInteger MTLManagedObjectAdapterErrorUnsupportedRelationshipClass;
 // which does not actually exist in +propertyKeys.
 extern const NSInteger MTLManagedObjectAdapterErrorInvalidManagedObjectMapping;
 
+extern NSString * const MTLManagedObjectAdapterUniquingCacheKey;
+
 // Converts a MTLModel object to and from an NSManagedObject.
 @interface MTLManagedObjectAdapter : NSObject
 
@@ -215,6 +217,8 @@ extern const NSInteger MTLManagedObjectAdapterErrorInvalidManagedObjectMapping;
 // error   - If not NULL, this may be set to an error that occurs during
 //           serialization or insertion.
 + (id)managedObjectFromModel:(id<MTLManagedObjectSerializing>)model insertingIntoContext:(NSManagedObjectContext *)context error:(NSError **)error;
+
++ (NSString *)uniquingCacheKeyForEntityName:(NSString *)entityName uniquingValue:(NSString *)uniquingValue;
 
 // An optional value transformer that should be used for properties of the given
 // class.

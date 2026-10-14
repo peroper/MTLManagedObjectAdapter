@@ -24,6 +24,8 @@ const NSInteger MTLManagedObjectAdapterErrorUnsupportedRelationshipClass = 6;
 const NSInteger MTLManagedObjectAdapterErrorUniqueFetchRequestFailed = 7;
 const NSInteger MTLManagedObjectAdapterErrorInvalidManagedObjectMapping = 8;
 
+NSString * const MTLManagedObjectAdapterUniquingCacheKey = @"MTLManagedObjectAdapterUniquingCache";
+
 // Performs the given block in the context's queue, if it has one.
 static id performInContext(NSManagedObjectContext *context, id (^block)(void)) {
 	if (context.concurrencyType == NSConfinementConcurrencyType) {
@@ -119,10 +121,15 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 // occurred. Clients should inspect the success parameter to decide how to
 // proceed with the result.
 - (NSPredicate *)uniquingPredicateForModel:(id<MTLManagedObjectSerializing>)model success:(BOOL *)success error:(NSError **)error;
+- (NSString *)uniquingCacheKeyForModel:(NSObject<MTLManagedObjectSerializing> *)model entityName:(NSString *)entityName;
 
 @end
 
 @implementation MTLManagedObjectAdapter
+
++ (NSString *)uniquingCacheKeyForEntityName:(NSString *)entityName uniquingValue:(NSString *)uniquingValue {
+	return [NSString stringWithFormat:@"%@|%@", entityName, uniquingValue];
+}
 
 #pragma mark Lifecycle
 
@@ -365,7 +372,19 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 
 	if (!success) return nil;
 
-	if (uniquingPredicate != nil) {
+	NSMutableDictionary *uniquingCache = context.userInfo[MTLManagedObjectAdapterUniquingCacheKey];
+	NSString *uniquingCacheKey = nil;
+	if ([uniquingCache isKindOfClass:NSMutableDictionary.class] && uniquingPredicate != nil) {
+		uniquingCacheKey = [self uniquingCacheKeyForModel:(NSObject<MTLManagedObjectSerializing> *)model entityName:entityName];
+	}
+	id cachedManagedObject = uniquingCacheKey != nil ? uniquingCache[uniquingCacheKey] : nil;
+	BOOL knownMissing = cachedManagedObject == NSNull.null;
+	NSManagedObject *cachedCandidate = [cachedManagedObject isKindOfClass:NSManagedObject.class] ? cachedManagedObject : nil;
+	if (cachedCandidate != nil && !cachedCandidate.isDeleted && cachedCandidate.managedObjectContext == context) {
+		managedObject = cachedCandidate;
+	}
+
+	if (uniquingPredicate != nil && managedObject == nil && !knownMissing) {
 		__block NSError *fetchRequestError = nil;
 		__block BOOL encountedError = NO;
 		managedObject = performInContext(context, ^ id {
@@ -402,9 +421,14 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 		}
 	}
 
+	BOOL foundExistingManagedObject = managedObject != nil;
 	if (managedObject == nil) {
 		managedObject = [entityDescriptionClass insertNewObjectForEntityForName:entityName inManagedObjectContext:context];
-	} else {
+	}
+	if (uniquingCacheKey != nil && managedObject != nil) {
+		uniquingCache[uniquingCacheKey] = managedObject;
+	}
+	if (foundExistingManagedObject) {
 		// Our CoreData store already has data for this model, we need to merge
 		[self mergeValuesOfModel:model forKeysFromManagedObject:managedObject];
 	}
@@ -662,6 +686,17 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 			[self mergeValueOfModel:model forKey:key fromManagedObject:managedObject];
 		}];
 	}
+}
+
+- (NSString *)uniquingCacheKeyForModel:(NSObject<MTLManagedObjectSerializing> *)model entityName:(NSString *)entityName {
+	if (![self.modelClass respondsToSelector:@selector(propertyKeysForManagedObjectUniquing)]) return nil;
+	NSSet *propertyKeys = [self.modelClass propertyKeysForManagedObjectUniquing];
+	if (propertyKeys.count != 1) return nil;
+	NSString *propertyKey = propertyKeys.anyObject;
+	if (self.valueTransformersByPropertyKey[propertyKey] != nil) return nil;
+	id uniquingValue = [model valueForKeyPath:propertyKey];
+	if (![uniquingValue isKindOfClass:NSString.class]) return nil;
+	return [self.class uniquingCacheKeyForEntityName:entityName uniquingValue:uniquingValue];
 }
 
 - (NSPredicate *)uniquingPredicateForModel:(NSObject<MTLManagedObjectSerializing> *)model success:(BOOL *)success error:(NSError **)error {
