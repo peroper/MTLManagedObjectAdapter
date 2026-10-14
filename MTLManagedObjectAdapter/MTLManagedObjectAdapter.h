@@ -158,6 +158,7 @@ FOUNDATION_EXPORT const unsigned char MTLManagedObjectAdapterVersionString[];
 
 // The domain for errors originating from MTLManagedObjectAdapter.
 extern NSString * const MTLManagedObjectAdapterErrorDomain;
+extern NSString * const MTLManagedObjectAdapterUniquingCacheKey;
 
 // +classForDeserializingManagedObject: returned nil for the given object.
 extern const NSInteger MTLManagedObjectAdapterErrorNoClassFound;
@@ -215,6 +216,8 @@ extern const NSInteger MTLManagedObjectAdapterErrorInvalidManagedObjectMapping;
 // error   - If not NULL, this may be set to an error that occurs during
 //           serialization or insertion.
 + (id)managedObjectFromModel:(id<MTLManagedObjectSerializing>)model insertingIntoContext:(NSManagedObjectContext *)context error:(NSError **)error;
+
++ (NSString *)uniquingCacheKeyForEntityName:(NSString *)entityName uniquingValue:(NSString *)uniquingValue;
 
 // An optional value transformer that should be used for properties of the given
 // class.

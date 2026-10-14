@@ -16,6 +16,7 @@
 #import "MTLManagedObjectAdapter.h"
 
 NSString * const MTLManagedObjectAdapterErrorDomain = @"MTLManagedObjectAdapterErrorDomain";
+NSString * const MTLManagedObjectAdapterUniquingCacheKey = @"MTLManagedObjectAdapterUniquingCache";
 const NSInteger MTLManagedObjectAdapterErrorNoClassFound = 2;
 const NSInteger MTLManagedObjectAdapterErrorInitializationFailed = 3;
 const NSInteger MTLManagedObjectAdapterErrorInvalidManagedObjectKey = 4;
@@ -123,6 +124,19 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 @end
 
 @implementation MTLManagedObjectAdapter
+
++ (NSString *)uniquingCacheKeyForEntityName:(NSString *)entityName uniquingValue:(NSString *)uniquingValue {
+	return [NSString stringWithFormat:@"%@|%@", entityName, uniquingValue];
+}
+
++ (NSString *)uniquingCacheKeyForModel:(NSObject<MTLManagedObjectSerializing> *)model entityName:(NSString *)entityName {
+	if (![model.class respondsToSelector:@selector(propertyKeysForManagedObjectUniquing)]) return nil;
+	NSSet *propertyKeys = [model.class propertyKeysForManagedObjectUniquing];
+	if (propertyKeys.count != 1) return nil;
+	id uniquingValue = [model valueForKeyPath:propertyKeys.anyObject];
+	if (![uniquingValue isKindOfClass:NSString.class]) return nil;
+	return [self uniquingCacheKeyForEntityName:entityName uniquingValue:uniquingValue];
+}
 
 #pragma mark Lifecycle
 
@@ -365,7 +379,20 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 
 	if (!success) return nil;
 
-	if (uniquingPredicate != nil) {
+	NSMutableDictionary *uniquingCache = context.userInfo[MTLManagedObjectAdapterUniquingCacheKey];
+	NSString *uniquingCacheKey = nil;
+	if ([uniquingCache isKindOfClass:NSMutableDictionary.class] && uniquingPredicate != nil) {
+		uniquingCacheKey = [self.class uniquingCacheKeyForModel:(NSObject<MTLManagedObjectSerializing> *)model entityName:entityName];
+	}
+	id cachedManagedObject = uniquingCacheKey != nil ? uniquingCache[uniquingCacheKey] : nil;
+	if ([cachedManagedObject isKindOfClass:NSManagedObject.class] && ((NSManagedObject *)cachedManagedObject).isDeleted) {
+		cachedManagedObject = nil;
+	}
+	if ([cachedManagedObject isKindOfClass:NSManagedObject.class]) {
+		managedObject = cachedManagedObject;
+	}
+
+	if (uniquingPredicate != nil && cachedManagedObject == nil) {
 		__block NSError *fetchRequestError = nil;
 		__block BOOL encountedError = NO;
 		managedObject = performInContext(context, ^ id {
@@ -402,9 +429,14 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 		}
 	}
 
+	BOOL foundExistingManagedObject = managedObject != nil;
 	if (managedObject == nil) {
 		managedObject = [entityDescriptionClass insertNewObjectForEntityForName:entityName inManagedObjectContext:context];
-	} else {
+	}
+	if (uniquingCacheKey != nil && managedObject != nil) {
+		uniquingCache[uniquingCacheKey] = managedObject;
+	}
+	if (foundExistingManagedObject) {
 		// Our CoreData store already has data for this model, we need to merge
 		[self mergeValuesOfModel:model forKeysFromManagedObject:managedObject];
 	}
