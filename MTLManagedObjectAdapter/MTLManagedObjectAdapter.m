@@ -121,6 +121,7 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 // occurred. Clients should inspect the success parameter to decide how to
 // proceed with the result.
 - (NSPredicate *)uniquingPredicateForModel:(id<MTLManagedObjectSerializing>)model success:(BOOL *)success error:(NSError **)error;
+- (NSString *)uniquingCacheKeyForModel:(NSObject<MTLManagedObjectSerializing> *)model entityName:(NSString *)entityName;
 
 @end
 
@@ -129,7 +130,6 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 + (NSString *)uniquingCacheKeyForEntityName:(NSString *)entityName uniquingValue:(NSString *)uniquingValue {
 	return [NSString stringWithFormat:@"%@|%@", entityName, uniquingValue];
 }
-
 
 #pragma mark Lifecycle
 
@@ -379,8 +379,9 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 	}
 	id cachedManagedObject = uniquingCacheKey != nil ? uniquingCache[uniquingCacheKey] : nil;
 	BOOL knownMissing = cachedManagedObject == NSNull.null;
-	if ([cachedManagedObject isKindOfClass:NSManagedObject.class] && !((NSManagedObject *)cachedManagedObject).isDeleted && ((NSManagedObject *)cachedManagedObject).managedObjectContext == context) {
-		managedObject = cachedManagedObject;
+	NSManagedObject *cachedCandidate = [cachedManagedObject isKindOfClass:NSManagedObject.class] ? cachedManagedObject : nil;
+	if (cachedCandidate != nil && !cachedCandidate.isDeleted && cachedCandidate.managedObjectContext == context) {
+		managedObject = cachedCandidate;
 	}
 
 	if (uniquingPredicate != nil && managedObject == nil && !knownMissing) {

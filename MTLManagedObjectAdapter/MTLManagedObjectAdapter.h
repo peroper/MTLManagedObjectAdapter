@@ -191,9 +191,9 @@ extern const NSInteger MTLManagedObjectAdapterErrorUnsupportedRelationshipClass;
 // which does not actually exist in +propertyKeys.
 extern const NSInteger MTLManagedObjectAdapterErrorInvalidManagedObjectMapping;
 
-// Converts a MTLModel object to and from an NSManagedObject.
 extern NSString * const MTLManagedObjectAdapterUniquingCacheKey;
 
+// Converts a MTLModel object to and from an NSManagedObject.
 @interface MTLManagedObjectAdapter : NSObject
 
 // Attempts to deserialize an NSManagedObject into a MTLModel object.
