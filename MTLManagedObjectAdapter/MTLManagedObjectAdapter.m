@@ -16,7 +16,6 @@
 #import "MTLManagedObjectAdapter.h"
 
 NSString * const MTLManagedObjectAdapterErrorDomain = @"MTLManagedObjectAdapterErrorDomain";
-NSString * const MTLManagedObjectAdapterUniquingCacheKey = @"MTLManagedObjectAdapterUniquingCache";
 const NSInteger MTLManagedObjectAdapterErrorNoClassFound = 2;
 const NSInteger MTLManagedObjectAdapterErrorInitializationFailed = 3;
 const NSInteger MTLManagedObjectAdapterErrorInvalidManagedObjectKey = 4;
@@ -24,6 +23,8 @@ const NSInteger MTLManagedObjectAdapterErrorUnsupportedManagedObjectPropertyType
 const NSInteger MTLManagedObjectAdapterErrorUnsupportedRelationshipClass = 6;
 const NSInteger MTLManagedObjectAdapterErrorUniqueFetchRequestFailed = 7;
 const NSInteger MTLManagedObjectAdapterErrorInvalidManagedObjectMapping = 8;
+
+NSString * const MTLManagedObjectAdapterUniquingCacheKey = @"MTLManagedObjectAdapterUniquingCache";
 
 // Performs the given block in the context's queue, if it has one.
 static id performInContext(NSManagedObjectContext *context, id (^block)(void)) {
@@ -129,14 +130,6 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 	return [NSString stringWithFormat:@"%@|%@", entityName, uniquingValue];
 }
 
-+ (NSString *)uniquingCacheKeyForModel:(NSObject<MTLManagedObjectSerializing> *)model entityName:(NSString *)entityName {
-	if (![model.class respondsToSelector:@selector(propertyKeysForManagedObjectUniquing)]) return nil;
-	NSSet *propertyKeys = [model.class propertyKeysForManagedObjectUniquing];
-	if (propertyKeys.count != 1) return nil;
-	id uniquingValue = [model valueForKeyPath:propertyKeys.anyObject];
-	if (![uniquingValue isKindOfClass:NSString.class]) return nil;
-	return [self uniquingCacheKeyForEntityName:entityName uniquingValue:uniquingValue];
-}
 
 #pragma mark Lifecycle
 
@@ -382,17 +375,15 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 	NSMutableDictionary *uniquingCache = context.userInfo[MTLManagedObjectAdapterUniquingCacheKey];
 	NSString *uniquingCacheKey = nil;
 	if ([uniquingCache isKindOfClass:NSMutableDictionary.class] && uniquingPredicate != nil) {
-		uniquingCacheKey = [self.class uniquingCacheKeyForModel:(NSObject<MTLManagedObjectSerializing> *)model entityName:entityName];
+		uniquingCacheKey = [self uniquingCacheKeyForModel:(NSObject<MTLManagedObjectSerializing> *)model entityName:entityName];
 	}
 	id cachedManagedObject = uniquingCacheKey != nil ? uniquingCache[uniquingCacheKey] : nil;
-	if ([cachedManagedObject isKindOfClass:NSManagedObject.class] && ((NSManagedObject *)cachedManagedObject).isDeleted) {
-		cachedManagedObject = nil;
-	}
-	if ([cachedManagedObject isKindOfClass:NSManagedObject.class]) {
+	BOOL knownMissing = cachedManagedObject == NSNull.null;
+	if ([cachedManagedObject isKindOfClass:NSManagedObject.class] && !((NSManagedObject *)cachedManagedObject).isDeleted && ((NSManagedObject *)cachedManagedObject).managedObjectContext == context) {
 		managedObject = cachedManagedObject;
 	}
 
-	if (uniquingPredicate != nil && cachedManagedObject == nil) {
+	if (uniquingPredicate != nil && managedObject == nil && !knownMissing) {
 		__block NSError *fetchRequestError = nil;
 		__block BOOL encountedError = NO;
 		managedObject = performInContext(context, ^ id {
@@ -694,6 +685,17 @@ static SEL MTLSelectorWithKeyPattern(NSString *key, const char *suffix) {
 			[self mergeValueOfModel:model forKey:key fromManagedObject:managedObject];
 		}];
 	}
+}
+
+- (NSString *)uniquingCacheKeyForModel:(NSObject<MTLManagedObjectSerializing> *)model entityName:(NSString *)entityName {
+	if (![self.modelClass respondsToSelector:@selector(propertyKeysForManagedObjectUniquing)]) return nil;
+	NSSet *propertyKeys = [self.modelClass propertyKeysForManagedObjectUniquing];
+	if (propertyKeys.count != 1) return nil;
+	NSString *propertyKey = propertyKeys.anyObject;
+	if (self.valueTransformersByPropertyKey[propertyKey] != nil) return nil;
+	id uniquingValue = [model valueForKeyPath:propertyKey];
+	if (![uniquingValue isKindOfClass:NSString.class]) return nil;
+	return [self.class uniquingCacheKeyForEntityName:entityName uniquingValue:uniquingValue];
 }
 
 - (NSPredicate *)uniquingPredicateForModel:(NSObject<MTLManagedObjectSerializing> *)model success:(BOOL *)success error:(NSError **)error {

@@ -158,7 +158,6 @@ FOUNDATION_EXPORT const unsigned char MTLManagedObjectAdapterVersionString[];
 
 // The domain for errors originating from MTLManagedObjectAdapter.
 extern NSString * const MTLManagedObjectAdapterErrorDomain;
-extern NSString * const MTLManagedObjectAdapterUniquingCacheKey;
 
 // +classForDeserializingManagedObject: returned nil for the given object.
 extern const NSInteger MTLManagedObjectAdapterErrorNoClassFound;
@@ -193,6 +192,8 @@ extern const NSInteger MTLManagedObjectAdapterErrorUnsupportedRelationshipClass;
 extern const NSInteger MTLManagedObjectAdapterErrorInvalidManagedObjectMapping;
 
 // Converts a MTLModel object to and from an NSManagedObject.
+extern NSString * const MTLManagedObjectAdapterUniquingCacheKey;
+
 @interface MTLManagedObjectAdapter : NSObject
 
 // Attempts to deserialize an NSManagedObject into a MTLModel object.
